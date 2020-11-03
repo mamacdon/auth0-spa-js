@@ -4,7 +4,7 @@ import unfetch from 'unfetch';
 import { verify } from '../src/jwt';
 import { MessageChannel } from 'worker_threads';
 import * as utils from '../src/utils';
-import { PopupConfigOptions } from '../src';
+import { AuthenticationResult, PopupConfigOptions } from '../src';
 import * as scope from '../src/scope';
 import {
   expectToHaveBeenCalledWithAuth0ClientParam,
@@ -44,7 +44,7 @@ const mockCookies = require('es-cookie');
 const originalRunPopup = utils.runPopup;
 const tokenVerifier = require('../src/jwt').verify;
 
-const authorizationResponse = {
+let authorizationResponse: AuthenticationResult = {
   code: 'my_code',
   state: TEST_STATE
 };
@@ -115,7 +115,10 @@ describe('Auth0Client', () => {
     mockWindow.Worker = {};
     jest.spyOn(scope, 'getUniqueScopes');
     sessionStorage.clear();
-    authorizationResponse.state = TEST_STATE;
+    authorizationResponse = {
+      code: 'my_code',
+      state: TEST_STATE
+    };
   });
 
   afterEach(() => {
@@ -1447,6 +1450,66 @@ describe('Auth0Client', () => {
 
       const decodedToken = await auth0.getUser();
       expect(decodedToken).toBeUndefined();
+    });
+  });
+
+  describe('isAuthenticated', () => {
+    describe('loginWithRedirect', () => {
+      it('returns true if there is an user', async () => {
+        const auth0 = setup();
+        await loginWithRedirect(auth0);
+
+        const result = await auth0.isAuthenticated();
+        expect(result).toBe(true);
+      });
+
+      it('returns false if code not part of URL', async () => {
+        const auth0 = setup();
+        try {
+          await loginWithRedirect(auth0, undefined, true, {}, null, null);
+        } catch {}
+        const result = await auth0.isAuthenticated();
+        expect(result).toBe(false);
+      });
+
+      it('returns false if token call fails', async () => {
+        const auth0 = setup();
+        try {
+          await loginWithRedirect(auth0, undefined, false);
+        } catch {}
+        const result = await auth0.isAuthenticated();
+        expect(result).toBe(false);
+      });
+    });
+
+    describe('loginWithPopup', () => {
+      it('returns true if there is an user', async () => {
+        const auth0 = setup();
+        await loginWithPopup(auth0);
+
+        const result = await auth0.isAuthenticated();
+        expect(result).toBe(true);
+      });
+    });
+
+    it('returns false if code not part of URL', async () => {
+      authorizationResponse.error = 'some error';
+
+      const auth0 = setup();
+      try {
+        await loginWithPopup(auth0);
+      } catch {}
+      const result = await auth0.isAuthenticated();
+      expect(result).toBe(false);
+    });
+
+    it('returns false if there is no user', async () => {
+      const auth0 = setup();
+
+      jest.spyOn(auth0['cache'], 'get').mockReturnValueOnce(undefined);
+
+      const result = await auth0.isAuthenticated();
+      expect(result).toBe(false);
     });
   });
 });
